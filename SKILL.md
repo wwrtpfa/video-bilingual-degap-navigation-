@@ -59,4 +59,4 @@ Use `<stem>_bilingual_degapped_navigation.mp4`, `<stem>_bilingual.srt`, and `<st
 
 ## Important limits
 
-This skill is for spoken videos with a reasonably clean voice track. Background music or constant noise reduces silence detection accuracy. Do not delete the source. Do not claim a chapter summary was generated from the SRT unless the chapter titles were actually derived from the subtitle text. The default subtitle treatment is yellow text with a black outline, sized from the source video resolution so screen recordings and ordinary 1080p videos remain readable.
+This skill is for spoken videos with a reasonably clean voice track. Background music or constant noise reduces silence detection accuracy. Do not delete the source. Do not claim a chapter summary was generated from the SRT unless the chapter titles were actually derived from the subtitle text. The default subtitle treatment is bold yellow text with a black outline, using approximately 36/27 logical px for Chinese/English before source-resolution scaling so screen recordings and ordinary 1080p videos remain readable.

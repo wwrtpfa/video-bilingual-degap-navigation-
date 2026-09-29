@@ -83,7 +83,12 @@ def main():
     stem=os.path.splitext(os.path.basename(args.video))[0]
     data=json.load(open(args.entries_json, encoding='utf-8'))
     total,pairs,cuts,keeps=silence_keeps(args.video,args.threshold,args.min_gap,args.tail,args.pre)
-    protected=[(max(0,float(r['start'])-.04), min(total,float(r['end'])+.04)) for r in data.get('subtitles',[])]
+    # Whisper may merge a whole paragraph into one long subtitle segment. Only
+    # protect short segments; long segments must remain editable internally so
+    # pauses inside a paragraph can still be removed.
+    protected=[(max(0,float(r['start'])-.04), min(total,float(r['end'])+.04))
+               for r in data.get('subtitles',[])
+               if float(r['end'])-float(r['start']) <= 6.0]
     cuts=protect_speech(cuts, protected)
     # Add transcript-reviewed cuts for duplicated words and obvious stutters.
     # Merge with silence cuts so one timeline is used for video, audio, and SRT.
@@ -108,8 +113,8 @@ def main():
     bar_x,bar_y,bar_w,bar_h=int(28*scale),int(H-80*scale),W-int(56*scale),int(58*scale)
     ass=['[Script Info]','ScriptType: v4.00+','PlayResX: '+str(W),'PlayResY: '+str(H),'', '[V4+ Styles]',
       'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-      f'Style: Zh,Arial,{int(32*scale)},&H0000FFFF,&H0000FFFF,&H00101010,&H99000000,0,0,0,0,100,100,0,0,1,3,1,2,{int(60*scale)},{int(60*scale)},{int(120*scale)},1',
-      f'Style: En,Arial,{int(24*scale)},&H0000FFFF,&H0000FFFF,&H00101010,&H99000000,0,0,0,0,100,100,0,0,1,3,1,2,{int(60*scale)},{int(60*scale)},{int(82*scale)},1',
+      f'Style: Zh,Arial,{int(36*scale)},&H0000FFFF,&H0000FFFF,&H00101010,&H99000000,1,0,0,0,100,100,0,0,1,3,1,2,{int(60*scale)},{int(60*scale)},{int(124*scale)},1',
+      f'Style: En,Arial,{int(27*scale)},&H0000FFFF,&H0000FFFF,&H00101010,&H99000000,1,0,0,0,100,100,0,0,1,3,1,2,{int(60*scale)},{int(60*scale)},{int(84*scale)},1',
       f'Style: Bar,Arial,{int(17*scale)},&H00F4F4F4,&H00F4F4F4,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1','[Events]','Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text']
     for s,e,zh,en in entries:
         if zh: ass.append(f'Dialogue: 0,{ass_ts(s)},{ass_ts(e)},Zh,,0,0,0,,{zh}')
