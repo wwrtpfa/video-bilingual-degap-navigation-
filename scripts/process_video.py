@@ -144,19 +144,24 @@ def ass_text(value):
     return str(value).replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}").replace("\n", "\\N")
 
 
-def make_ass(path, entries, chapters, final_total, width, height, fps):
-    scale = height / 1080
-    # Match the reference: a thin chapter strip flush with the bottom edge.
-    # Captions remain in a separate area above the strip.
-    bar_h, font_zh, font_en, font_bar = (round(v * scale) for v in (54, 43, 29, 21))
-    bar_y = height - bar_h
+def make_ass(path, entries, chapters, final_total, width, height, fps, top_band):
+    # ASS glyphs render smaller than CSS glyphs at the same numeric font size.
+    # These sizes match the visible 94px/62px Remotion captions at 2160p.
+    scale = height / 2160
+    canvas_height = height + top_band
+    line_h = max(2, round(10 * scale))
+    line_y = top_band - line_h
+    font_zh, font_en = (max(1, round(v * scale)) for v in (130, 73))
+    font_bar = min(max(1, round(48 * scale)), round(width / 32))
+    label_y = round(line_y / 2)
+    side_pad = round(width * .026)
     lines = [
-        "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {width}", f"PlayResY: {height}", "ScaledBorderAndShadow: yes", "",
+        "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {width}", f"PlayResY: {canvas_height}", "ScaledBorderAndShadow: yes", "",
         "[V4+ Styles]",
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        f"Style: Zh,PingFang SC,{font_zh},&H00FFFFFF,&H00FFFFFF,&H00000000,&H70000000,1,0,0,0,100,100,0,0,1,3,1,2,{round(80*scale)},{round(80*scale)},{round(136*scale)},1",
-        f"Style: En,Arial,{font_en},&H00FFFFFF,&H00FFFFFF,&H00000000,&H70000000,0,0,0,0,100,100,0,0,1,2,1,2,{round(80*scale)},{round(80*scale)},{round(92*scale)},1",
-        f"Style: Bar,PingFang SC,{font_bar},&H00FFFFFF,&H00FFFFFF,&H00141414,&H00000000,0,0,0,0,100,100,0,0,1,1,0,5,0,0,0,1",
+        f"Style: Zh,PingFang SC,{font_zh},&H0048E3FF,&H0048E3FF,&H00151515,&H00000000,1,0,0,0,100,100,0,0,1,3,1,2,{round(120*scale)},{round(120*scale)},{round(331*scale)},1",
+        f"Style: En,Arial,{font_en},&H0048E3FF,&H0048E3FF,&H00151515,&H00000000,0,0,0,0,100,100,0,0,1,2,1,2,{round(120*scale)},{round(120*scale)},{round(253*scale)},1",
+        f"Style: Bar,PingFang SC,{font_bar},&H00FFFFFF,&H00FFFFFF,&H00151515,&H00000000,1,0,0,0,100,100,0,0,1,1,0,5,0,0,0,1",
         "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
     end_time = timecode(final_total, True)
@@ -165,18 +170,19 @@ def make_ass(path, entries, chapters, final_total, width, height, fps):
             lines.append(f"Dialogue: 5,{timecode(start, True)},{timecode(end, True)},Zh,,0,0,0,,{ass_text(zh)}")
         if en:
             lines.append(f"Dialogue: 5,{timecode(start, True)},{timecode(end, True)},En,,0,0,0,,{ass_text(en)}")
-    # Shapes use a top-left anchor so their full width stays inside the frame.
-    # The rail is slightly transparent; labels use their own centered anchor.
-    lines.append(f"Dialogue: 0,0:00:00.00,{end_time},Bar,,0,0,0,,{{\\an7\\p1\\pos(0,{bar_y})\\bord0\\c&H00060606&\\1a&H50&}}m 0 0 l {width} 0 l {width} {bar_h} l 0 {bar_h}")
+    # The progress line ends exactly where the source image begins.
+    lines.append(f"Dialogue: 0,0:00:00.00,{end_time},Bar,,0,0,0,,{{\\an7\\p1\\pos(0,{line_y})\\bord0\\c&H00FFFFFF&\\1a&HBC&}}m 0 0 l {width} 0 l {width} {line_h} l 0 {line_h}")
     for frame in range(math.ceil(final_total * fps)):
         start, end = frame / fps, min(final_total, (frame + 1) / fps)
         fill = max(1, round(width * end / final_total))
-        lines.append(f"Dialogue: 1,{timecode(start, True)},{timecode(end, True)},Bar,,0,0,0,,{{\\an7\\p1\\pos(0,{bar_y})\\bord0\\c&H00808080&\\1a&H38&}}m 0 0 l {fill} 0 l {fill} {bar_h} l 0 {bar_h}")
+        lines.append(f"Dialogue: 1,{timecode(start, True)},{timecode(end, True)},Bar,,0,0,0,,{{\\an7\\p1\\pos(0,{line_y})\\bord0\\c&H00A6A948&\\1a&H20&}}m 0 0 l {fill} 0 l {fill} {line_h} l 0 {line_h}")
     for index, (start, end, title) in enumerate(chapters):
-        x, x_end = round(width * start / final_total), round(width * end / final_total)
+        x = round(width * start / final_total)
         if index:
-            lines.append(f"Dialogue: 2,0:00:00.00,{end_time},Bar,,0,0,0,,{{\\an7\\p1\\pos({x},{bar_y})\\bord0\\c&H00606060&\\1a&H28&}}m 0 0 l 2 0 l 2 {bar_h} l 0 {bar_h}")
-        lines.append(f"Dialogue: 3,0:00:00.00,{end_time},Bar,,0,0,0,,{{\\an5\\pos({(x+x_end)/2:.1f},{bar_y+bar_h/2:.1f})\\fs{font_bar}\\bord1}}{ass_text(title)}")
+            lines.append(f"Dialogue: 2,0:00:00.00,{end_time},Bar,,0,0,0,,{{\\an7\\p1\\pos({x},{line_y})\\bord0\\c&H00FFFFFF&\\1a&H80&}}m 0 0 l 2 0 l 2 {line_h} l 0 {line_h}")
+        title_font = min(font_bar, max(round(24 * scale), round(width * .68 / max(len(title), 1))))
+        lines.append(f"Dialogue: 3,{timecode(start, True)},{timecode(end, True)},Bar,,0,0,0,,{{\\an4\\pos({side_pad},{label_y})\\fs{title_font}}}{ass_text(title)}")
+        lines.append(f"Dialogue: 3,{timecode(start, True)},{timecode(end, True)},Bar,,0,0,0,,{{\\an6\\pos({width-side_pad},{label_y})}}{index+1:02d} / {len(chapters):02d}")
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -194,6 +200,7 @@ def main():
     parser.add_argument("--cut-plan", type=Path, help="Reuse cuts from a prior chapters report for style-only rerenders")
     parser.add_argument("--plan-only", action="store_true")
     parser.add_argument("--video-bitrate", type=int)
+    parser.add_argument("--top-band-height", type=int, help="Pixels added above the source video; default scales from 56px at 1080p")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -207,6 +214,10 @@ def main():
     total = float(metadata["format"]["duration"])
     width, height = video["width"], video["height"]
     fps = float(Fraction(video["avg_frame_rate"]))
+    top_band = args.top_band_height if args.top_band_height is not None else max(24, 2 * round(28 * height / 1080))
+    if top_band <= 0:
+        raise ValueError("Top band height must be positive")
+    canvas_height = height + top_band
     if args.cut_plan:
         plan = json.loads(args.cut_plan.read_text(encoding="utf-8"))
         planned_cuts = plan.get("cuts", plan) if isinstance(plan, dict) else plan
@@ -231,7 +242,9 @@ def main():
     report_path = args.output_dir / f"{stem}_chapters.json"
     report = {"input": str(args.video.resolve()), "original_duration": total, "final_duration": final_total,
               "removed_seconds": total-final_total, "silences_detected": silence_count, "vad_speech_segments": vad_count,
-              "cuts": [{"start": a, "end": b} for a, b in cuts], "reviewed_cuts": extra}
+              "cuts": [{"start": a, "end": b} for a, b in cuts], "reviewed_cuts": extra,
+              "source_resolution": [width, height], "output_resolution": [width, canvas_height],
+              "top_band_height": top_band}
     if args.cut_plan:
         report["reused_cut_plan"] = str(args.cut_plan.resolve())
     if args.plan_only:
@@ -253,7 +266,7 @@ def main():
     srt = args.output_dir / f"{stem}_bilingual.srt"
     srt.write_text("".join(f"{i}\n{timecode(a)} --> {timecode(b)}\n{zh}\n{en}\n\n" for i, (a,b,zh,en) in enumerate(entries, 1)), encoding="utf-8")
     ass = args.output_dir / f"{stem}_navigation.ass"
-    make_ass(ass, entries, chapters, final_total, width, height, fps)
+    make_ass(ass, entries, chapters, final_total, width, height, fps, top_band)
     parts = []
     for i, (start, end) in enumerate(keeps):
         parts += [f"[0:v]trim=start={start:.4f}:end={end:.4f},setpts=PTS-STARTPTS[v{i}]",
@@ -261,10 +274,10 @@ def main():
     parts.append("".join(f"[v{i}][a{i}]" for i in range(len(keeps))) + f"concat=n={len(keeps)}:v=1:a=1[v][a]")
     # Concat may otherwise emit a variable frame rate after cuts. Reassert the
     # source rate before subtitle burn-in so screen recordings keep their cadence.
-    parts.append(f"[v]fps=fps={fps:.6f},ass={str(ass.resolve())}[vo]")
+    parts.append(f"[v]fps=fps={fps:.6f},pad=w={width}:h={canvas_height}:x=0:y={top_band}:color=0x0b1217,ass={str(ass.resolve())}[vo]")
     output = args.output or args.output_dir / f"{stem}_bilingual_degapped_navigation.mp4"
     source_bitrate = int(video.get("bit_rate") or 0)
-    target = args.video_bitrate or max(10_000_000, int(width*height*fps*.08), int(source_bitrate*1.3))
+    target = args.video_bitrate or max(10_000_000, int(width*canvas_height*fps*.08), int(source_bitrate*1.3))
     for attempt in range(3):
         run([FFMPEG, "-hide_banner", "-y", "-i", str(args.video), "-filter_complex", ";".join(parts),
              "-map", "[vo]", "-map", "[a]", "-c:v", "h264_videotoolbox", "-b:v", str(target),
@@ -272,8 +285,8 @@ def main():
         rendered = next(stream for stream in probe(output)["streams"] if stream["codec_type"] == "video")
         output_fps = float(Fraction(rendered["avg_frame_rate"]))
         output_bitrate = int(rendered.get("bit_rate") or 0)
-        if (rendered["width"],rendered["height"]) != (width,height) or abs(output_fps-fps) > max(.1, fps*.002):
-            raise RuntimeError("Rendered resolution or frame rate differs from source")
+        if (rendered["width"],rendered["height"]) != (width,canvas_height) or abs(output_fps-fps) > max(.1, fps*.002):
+            raise RuntimeError("Rendered canvas dimensions or frame rate differ from plan")
         if args.video_bitrate or not source_bitrate or output_bitrate >= source_bitrate:
             break
         target = int(target*1.5)

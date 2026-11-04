@@ -1,37 +1,39 @@
 ---
 name: video-bilingual-degap-navigation
-description: "Process spoken video in one pass with pause removal, Chinese-English subtitles, chapter navigation, and a moving progress line. Use for finished subtitled videos, and preserve source resolution, frame rate, and video quality by default."
+description: Finish an existing spoken video by preserving its original voice, removing reviewed pauses and stutters, adding yellow Chinese-English subtitles without a background panel, and placing chapter progress in a top band outside the source picture. Use for recorded speech, screen recordings, and talking-head footage.
 ---
 
-# Video Bilingual Degap Navigation
+# Bilingual Video Finishing
 
-Use this skill for a complete spoken-video finishing pass. The expected input is one local video file. Preserve the original file and write new files beside the current task outputs.
+This skill starts with a recorded video that already has usable speech. Keep its original voice and edit the same source-time ranges from picture and audio. Do not synthesize or layer a new voiceover. For a video generated from a written script, derive captions from that script in its renderer instead of transcribing it again.
 
-Requires macOS Apple Silicon, ffmpeg-full, and the existing mlx-whisper environment. The persistent venv should also have `silero-vad` and `onnxruntime` for speech-activity detection; if they are unavailable, stop and say so rather than silently falling back to aggressive volume-only editing.
+## Inputs and tools
 
-## What it produces
+- One local video with a video stream and an audio stream; keep the source file untouched.
+- `ffprobe` and FFmpeg with the `ass` filter. The processor defaults to `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`; set `FFMPEG` to another compatible binary when needed.
+- For automatic cut planning, a Python environment with `silero-vad`, `onnxruntime`, `numpy`, and `torch`. `transcribe_srt.py` additionally needs `mlx-whisper` on supported macOS hardware. Check imports in the selected interpreter before starting. If VAD is unavailable, explain the blocker or use a previously reviewed `--cut-plan`; do not silently switch to volume-only cuts.
 
-- A new MP4 with speech pauses and reviewed repetitions/stutters compressed, burned-in white Chinese-English subtitles, and a navigation bar directly below the subtitles.
-- A standalone bilingual SRT file with the same post-cut timing.
-- A JSON report containing original duration, final duration, removed pause time, and chapter metadata.
+## Output style
 
-The navigation bar follows the supplied reference style: a thin full-width translucent black rail flush with the bottom edge, white chapter labels centered horizontally and vertically in their source-time sections, thin separators, and a translucent neutral-gray played portion that advances continuously with playback. At 1080p the rail is approximately 54 px high, about 5% of the frame height. Render rail/fill/separator shapes from a top-left anchor so their dimensions stay inside the frame; use centered positioning only for labels. Keep it below both subtitle lines with a visible gap. Do not use yellow text, red active blocks, multicolor cards, a tall bottom panel, or place the bar above the subtitles.
+The processor adds a slim band **above the original picture**. The source image remains at its original pixel size and begins immediately below that band; the progress line sits on the band's lower edge, touching the source boundary without covering source pixels. The band contains the current chapter title and chapter number. Its default height scales from `56 px` for a `1080 px` high source (`112 px` for a `2160 px` high source), and `--top-band-height` can override it.
+
+Chinese and English subtitles are centered in the lower part of the picture. Both lines are yellow (`#FFE348`) with a restrained dark outline and **no opaque background panel**. At a `2160 px` source height, the ASS renderer uses `130 px` Chinese and `73 px` English. These were calibrated against the visible size of the approved Remotion captions (`94 px` / `62 px` in CSS); ASS and CSS font sizes do not produce equal glyph sizes. Scale the ASS values proportionally for other source heights. Inspect the actual footage and adjust position if a face, button, demonstration, or platform UI occupies that region. Do not put a navigation rail at the bottom or cover the source's top menu/title bar.
+
+The output is an H.264/AAC MP4, a post-cut bilingual SRT, an ASS render file, and a JSON report with cuts, chapter boundaries, source size, output canvas size, and band height. The canvas height grows by the band height; source content itself is neither scaled nor cropped. Preserve the source frame rate and use a video bitrate at least as high as the source's when available.
 
 ## Workflow
 
-1. Inspect the source with `ffprobe` and confirm it has video and audio.
-2. Extract Chinese speech timestamps with the persistent environment:
-   `/Users/pengfanao/Downloads/bilingual-subtitle-skill-main/.venv/bin/python`
-   and this skill's `scripts/transcribe_srt.py`, using `-l zh -m medium` unless the user asks for another language/model.
-3. Run the same transcription with `--words-json words.json` when possible. Word-level timestamps protect soft consonants and low-volume word starts from being cut. WhisperX is a useful alternative when its forced-alignment model supports the language; do not claim word-level accuracy from segment timestamps alone.
-4. Read the resulting SRT and correct obvious recognition errors in technical names, people names, and product names. Translate each subtitle into concise natural English. Keep the original timing. For clear duplicated words or stutters, write reviewed source-time ranges in `extra-cuts.json`; never infer these from a single ASR typo.
-5. Summarize the SRT into 3-8 chapter titles. Prefer semantic boundaries from the spoken content; use short labels such as `03  Java 后端与风控经历`. Never invent details absent from the subtitles. Pass the titles and original source-time boundaries to `scripts/process_video.py` as JSON.
-6. Run `scripts/process_video.py` with the corrected bilingual entries, `--words-json`, and optional `--extra-cuts`. It combines FFmpeg silence detection with Silero VAD, keeps asymmetric tail/head buffers, protects word boundaries, remaps subtitle times, renders the white subtitles and reference-style gray progress rail, and encodes the final MP4. Use `--plan-only` before rendering to inspect proposed cuts.
-7. Validate with `ffprobe` and extract representative frames near the start, a chapter transition, and the end. Confirm audio/video durations match, the bar is below both subtitle lines, chapter labels fit, and the gray played portion advances. Check fine text and screen-recording details at native resolution.
+1. Probe the source and listen to representative portions. Transcribe its speech with `scripts/transcribe_srt.py`; request `--words-json` when possible. Correct product names, technical terms, speaker errors, and punctuation, then translate each caption into concise English.
+2. Review the source-time transcript and video together. Derive short chapter titles from what is actually said. Mark obvious repeated words or stutters in an optional `extra-cuts.json`; do not infer a cut from one ASR error.
+3. Use `scripts/process_video.py --plan-only` to review proposed cuts before rendering. It combines FFmpeg silence detection with Silero VAD and protects word boundaries with asymmetric tail/head buffers. Preserve natural breaths and the first consonant of each sentence. Increase `--pre` if a following word is clipped; increase `--min-gap` if the edit feels too aggressive.
+4. Render with the reviewed plan. For layout-only revisions, pass the prior report as `--cut-plan` so the edit timing remains identical. Subtitles, chapters, and the moving progress line all use the post-cut timeline.
+5. Check frames at the start, a chapter change, a bright background, the longest subtitle, and the end. Confirm the line is entirely outside the original picture, both yellow subtitle lines have no black panel, chapter text fits, and progress advances. Watch and listen across every cut; verify audio/video duration, source frame rate, output dimensions, and full decode.
 
-## Script interface
+When a larger Remotion composition is also requested, use this output as its finished footage layer or reuse the cut report to composite from the original. Add content-specific motion graphics around the footage without duplicating its captions, progress line, or audio.
 
-Create a JSON file with this shape:
+## Run
+
+Entries use source-time seconds:
 
 ```json
 {
@@ -39,38 +41,21 @@ Create a JSON file with this shape:
     {"start": 0.0, "end": 2.4, "zh": "中文", "en": "English"}
   ],
   "chapters": [
-    {"start": 0.0, "end": 8.5, "title": "01  开场与目标"}
+    {"start": 0.0, "end": 8.5, "title": "01 开场与目标"}
   ]
 }
 ```
 
-Optional word timestamps are a JSON array of `{ "start": 1.2, "end": 1.5, "word": "文本" }`. Generate them with:
+Optional word timestamps are an array of `{ "start": 1.2, "end": 1.5, "word": "文本" }`. A reviewed cut file is an array of source-time pairs, such as `[[4.76, 5.94]]`.
 
 ```bash
-python scripts/transcribe_srt.py input.mp4 -o bilingual.srt --words-json words.json -m small
+python scripts/transcribe_srt.py input.mp4 -o source.srt --words-json words.json -l zh -m medium
+python scripts/process_video.py input.mp4 --entries-json bilingual.json \
+  --words-json words.json --plan-only
+python scripts/process_video.py input.mp4 --entries-json bilingual.json \
+  --words-json words.json --cut-plan outputs/input_chapters.json --output-dir outputs
 ```
 
-Then run:
+`--extra-cuts` is optional. The first command produces raw Chinese timestamps; proofread and create `bilingual.json` before processing. Use `--threshold` (default `-35 dB`), `--min-gap` (`0.25 s`), `--tail` (`0.06 s`), and `--pre` (`0.12 s`) only when the recording calls for different cut behavior.
 
-```bash
-python3 /Users/pengfanao/.codex/skills/video-bilingual-degap-navigation/scripts/process_video.py \
-  input.mp4 --entries-json bilingual.json --words-json words.json --output-dir outputs
-```
-
-For reviewed repetitions or stutters, add a JSON file such as `[[4.76, 5.94], [35.08, 36.54]]` and pass `--extra-cuts reviewed_cuts.json`.
-
-Optional controls: `--threshold` (default `-35` dB), `--min-gap` (default `0.25` seconds), `--tail` (default `0.06`), `--pre` (default `0.12`), and `--extra-cuts` for a JSON array of source-time `[start, end]` ranges. The processor combines `silencedetect` with Silero VAD; use `--plan-only` to review cuts before encoding. Increase `--pre` if a following word is clipped; increase `--min-gap` if the edit feels too aggressive. The default deliberately does not cut short breaths.
-
-For a style-only rerender of the same source, pass a previously validated chapters report with `--cut-plan`. This reuses its exact `cuts` and skips speech analysis, preventing visual revisions from changing editorial timing.
-
-## Preserve source quality
-
-The user does not want video quality reduced. Keep the source resolution and frame rate, and never apply a low fixed bitrate. The script targets at least 130% of the source video bitrate (or a resolution and frame-rate based fallback) and verifies the actual output. If automatic output bitrate falls below the source, it retries at a higher target; if dimensions or frame rate change, it fails. Use `--video-bitrate` only when the user explicitly requests a different quality/size tradeoff. Use `--output` for a separate comparison version. Burning subtitles and cutting frames require re-encoding, so the MP4 cannot be byte-for-byte lossless; inspect representative native-resolution frames before delivery.
-
-## Output naming
-
-Use `<stem>_bilingual_degapped_navigation.mp4`, `<stem>_bilingual.srt`, and `<stem>_chapters.json` unless the user specifies another location.
-
-## Important limits
-
-This skill is for spoken videos with a reasonably clean voice track. Background music or constant noise reduces silence detection accuracy. Do not delete the source. Do not claim a chapter summary was generated from the SRT unless the chapter titles were actually derived from the subtitle text. The default subtitle treatment is white Chinese/English text with a restrained black outline and a larger Chinese line, using approximately 43/29 logical px before source-resolution scaling. The default progress rail is black with white labels and a gray elapsed fill, matching the supplied visual reference.
+Default filenames are `<stem>_bilingual_degapped_navigation.mp4`, `<stem>_bilingual.srt`, `<stem>_navigation.ass`, and `<stem>_chapters.json` in `--output-dir` (`outputs` by default). Use `--output` for a separate comparison version. Burning subtitles and adding a top band require video re-encoding, so inspect fine source details at native resolution before delivery.
